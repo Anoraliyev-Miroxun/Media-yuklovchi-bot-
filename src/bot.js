@@ -84,6 +84,31 @@ function checkFfmpeg() {
     }
 }
 
+// Internet va Telegram API tekshirish
+async function checkConnection() {
+    try {
+        console.log("🌐 Internet tekshirilmoqda...");
+        
+        // Google ping
+        execSync('ping -c 1 google.com', { stdio: 'ignore', timeout: 5000 });
+        console.log("✅ Internet ishlayapti");
+        
+        // Telegram API ping
+        try {
+            execSync('ping -c 1 api.telegram.org', { stdio: 'ignore', timeout: 5000 });
+            console.log("✅ Telegram API ga ulanish bor");
+        } catch (err) {
+            console.log("⚠️  Telegram API ga ping yo'q (VPN kerak bo'lishi mumkin)");
+        }
+        
+        return true;
+    } catch (err) {
+        console.error("❌ Internet yo'q!");
+        console.error("   Tekshiring: ping google.com");
+        return false;
+    }
+}
+
 // Platforma aniqlash
 function detectPlatform(url) {
     if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) return 'tiktok';
@@ -146,6 +171,7 @@ async function downloadDirect(ctx, url, platform, hasImpersonation) {
     
     try {
         waitMsg = await ctx.reply("⏳ Video yuklanmoqda...");
+        console.log(`⬇️ To'g'ridan-to'g'ri yuklash boshlandi: ${platform}`);
         
         const shortId = `direct_${ctx.from.id}_${Date.now()}`;
         const tempFile = join("/tmp", `${shortId}.mp4`);
@@ -155,19 +181,23 @@ async function downloadDirect(ctx, url, platform, hasImpersonation) {
         // TikTok uchun impersonation
         if (platform === 'tiktok' && hasImpersonation) {
             command += ` --impersonate chrome`;
+            console.log("   🔧 TikTok impersonation yoqildi");
             
             if (fs.existsSync('./cookies.txt')) {
                 command += ` --cookies ./cookies.txt`;
+                console.log("   🍪 Cookies ishlatilmoqda");
             }
         }
 
         // Instagram uchun
         if (platform === 'instagram') {
             command += ` --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"`;
+            console.log("   📱 Instagram user-agent o'rnatildi");
         }
 
         command += ` "${url}"`;
 
+        console.log("   ⏳ Fayl yuklanmoqda...");
         await execAsync(command, { 
             maxBuffer: 100 * 1024 * 1024,
             timeout: 180000 // 3 daqiqa
@@ -178,6 +208,7 @@ async function downloadDirect(ctx, url, platform, hasImpersonation) {
         }
 
         const stats = fs.statSync(tempFile);
+        console.log(`   ✅ Fayl yuklandi: ${(stats.size / 1024 / 1024).toFixed(1)} MB`);
         
         if (stats.size > 2 * 1024 * 1024 * 1024) {
             fs.unlinkSync(tempFile);
@@ -192,6 +223,7 @@ async function downloadDirect(ctx, url, platform, hasImpersonation) {
 
         await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
         
+        console.log("   📤 Telegram ga yuborilmoqda...");
         await ctx.replyWithVideo(
             { source: fs.createReadStream(tempFile) },
             { 
@@ -201,7 +233,7 @@ async function downloadDirect(ctx, url, platform, hasImpersonation) {
         );
 
         fs.unlinkSync(tempFile);
-        console.log(`✅ Yuklandi: ${platform} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
+        console.log(`✅ Yuborildi: ${platform} (${(stats.size / 1024 / 1024).toFixed(1)} MB)\n`);
 
     } catch (err) {
         console.error("❌ Yuklash xatosi:", err.message);
@@ -246,15 +278,16 @@ async function start() {
             const user = await UserService.getById(ctx.from.id);
             if (!user) {
                 await UserService.create(ctx.from);
-                console.log("yangi user create boldi");
+                console.log("✅ Yangi user yaratildi:", ctx.from.first_name);
             } else {
                 await UserService.update(ctx.from.id, {
                     username: ctx.from.username,
                     first_name: ctx.from.first_name
                 });
+                console.log("🔄 User yangilandi:", ctx.from.first_name);
             }
         } catch (err) {
-            console.error("User xatosi:", err.message);
+            console.error("❌ User xatosi:", err.message);
         }
 
         ctx.reply(
@@ -443,7 +476,7 @@ async function start() {
             return ctx.answerCbQuery("❌ Muddati tugagan. Qayta yuboring.", { show_alert: true });
         }
 
-        console.log(`⬇️ Yuklash: ${info.title} (${ctx.from.first_name})`);
+        console.log(`⬇️ Yuklash boshlandi: ${info.title} (${ctx.from.first_name})`);
 
         try {
             await ctx.answerCbQuery("⏳ Yuklanmoqda...");
@@ -474,6 +507,7 @@ async function start() {
 
             command += ` "${info.url}"`;
 
+            console.log(`   ⏳ ${info.type === "video" ? "Video" : "Audio"} yuklanmoqda...`);
             await execAsync(command, { 
                 maxBuffer: 100 * 1024 * 1024,
                 timeout: 180000 
@@ -484,6 +518,7 @@ async function start() {
             }
 
             const stats = fs.statSync(tempFile);
+            console.log(`   ✅ Fayl tayyor: ${(stats.size / 1024 / 1024).toFixed(1)} MB`);
 
             if (stats.size > 2 * 1024 * 1024 * 1024) {
                 fs.unlinkSync(tempFile);
@@ -494,6 +529,7 @@ async function start() {
                           `${info.uploader ? `👤 ${info.uploader}\n` : ''}` +
                           `📦 ${(stats.size / 1024 / 1024).toFixed(1)} MB\n\n📥 ${username_bot}`;
 
+            console.log("   📤 Telegram ga yuborilmoqda...");
             if (info.type === "video") {
                 await ctx.replyWithVideo(
                     { source: fs.createReadStream(tempFile) },
@@ -507,7 +543,7 @@ async function start() {
             }
 
             fs.unlinkSync(tempFile);
-            console.log(`✅ Yuborildi: ${info.title} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
+            console.log(`✅ Yuborildi: ${info.title} (${(stats.size / 1024 / 1024).toFixed(1)} MB)\n`);
 
         } catch (err) {
             console.error("❌ Yuklash xato:", err.message);
@@ -535,17 +571,45 @@ async function start() {
     try {
         console.log("\n🚀 Bot ishga tushmoqda...\n");
         
+        // Database
         await sequelize.authenticate();
         console.log("✅ Database");
-        
         await sequelize.sync({ alter: true });
         
+        // Tizim tekshiruvi
         checkFfmpeg();
+        
+        // Internet tekshiruvi
+        const hasInternet = await checkConnection();
+        if (!hasInternet) {
+            console.error("\n❌ Internet yo'q! Bot ishlamaydi.\n");
+            process.exit(1);
+        }
+        
         console.log();
 
         await start();
 
-        await bot.launch();
+        // Bot ishga tushirish (retry bilan)
+        let retries = 3;
+        let launched = false;
+        
+        while (retries > 0 && !launched) {
+            try {
+                await bot.launch();
+                launched = true;
+            } catch (err) {
+                retries--;
+                console.error(`⚠️  Telegram ga ulanish xatosi (${3 - retries}/3):`, err.message);
+                
+                if (retries > 0) {
+                    console.log("   🔄 5 soniyadan keyin qayta uriniladi...");
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                } else {
+                    throw err;
+                }
+            }
+        }
         
         console.log("\n" + "=".repeat(50));
         console.log("✅ BOT ISHGA TUSHDI!");
@@ -558,10 +622,26 @@ async function start() {
     } catch (err) {
         console.error("\n❌ XATO:", err.message);
         console.error("\n🔧 YECHIMLAR:");
-        console.error("1. Internet: ping google.com");
-        console.error("2. Token: BOT_TOKEN .env da to'g'ri yozilganligini tekshiring");
-        console.error("3. TikTok: sudo pip3 install -U yt-dlp --break-system-packages");
-        console.error("4. VPN yoqing\n");
+        
+        if (err.message.includes('Conflict') || err.message.includes('409')) {
+            console.error("1. Eski bot jarayonini to'xtating: pkill -f 'node.*bot.js'");
+            console.error("2. Yoki boshqa terminalda bot ishlamayotganligini tekshiring");
+        } else if (err.message.includes('Unauthorized') || err.message.includes('401')) {
+            console.error("1. BOT_TOKEN .env da to'g'ri ekanligini tekshiring");
+            console.error("2. Tokenni @BotFather dan qayta oling");
+        } else if (err.message.includes('getMe') || err.message.includes('api.telegram.org')) {
+            console.error("1. Internet: ping google.com");
+            console.error("2. VPN yoqib ko'ring");
+            console.error("3. Firewall: sudo ufw allow 443/tcp");
+            console.error("4. DNS: echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf");
+        } else {
+            console.error("1. Internet: ping google.com");
+            console.error("2. Token: BOT_TOKEN .env da to'g'ri yozilganligini tekshiring");
+            console.error("3. TikTok: sudo pip3 install -U yt-dlp --break-system-packages");
+            console.error("4. VPN yoqing");
+        }
+        
+        console.error("");
         process.exit(1);
     }
 })();
